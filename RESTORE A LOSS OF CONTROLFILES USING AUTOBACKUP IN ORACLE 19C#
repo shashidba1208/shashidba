@@ -1,0 +1,44 @@
+ #Rsolve ORA-00210,ORA-00202,ORA-27041 AND RESTORE A LOSS OF CONTROLFILES USING AUTOBACKUP IN ORACLE 19C#
+
+
+step 1: Check the RMAN configuration and control file and back-up feature is ON.
+
+SQL> rman target /
+RMAN> show all;
+
+status: CONFIGURATION CONTROLFILE AUTOBACKUP ON;
+
+step 2: simulate a failure to remove the control file when the database is running.
+
+SQL>select name from v$controlfile;
+host>cd /u01/app/oracle/INDBBA
+host> rm -rf controlfile1.ctl
+host>rm -rf controlfile02.ctl
+
+then check the status of control files:
+
+SQL>SELECT TABLESPACE _NAME FRON DBA_DATA_FILES;
+SQL>SHUTDOWN IMMEDIATE;
+ORA-00210 : cannot open the specified control file.
+SQL>SHUT ABORT;
+ORACLE instance shut down 
+
+step 3: keep the database in NOMOUNT stage and restore the controlfile.
+
+SQL>STARTUP NOMOUNT;
+
+step 4: since we are not using a RMAN CATLOG we need to to set the DBID.
+host> rman target /
+RMAN> SET DBID=936024966;
+RMAN>restore controlfile from AUTOBACKUP;
+
+step 5: mount and recover the database 
+
+RMAN> ALTER DATABASE NOMOUNT;
+RMAN> RECOVER DATABASE;
+
+step 6: open the database using restogs option 
+
+RMAN> alter database open resetlogs;
+SQL>STARTUP NOMOUNT;
+SQL>SELECT OPEN_MODE, NAME FRON V$DATABASE;
