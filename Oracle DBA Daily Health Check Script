@@ -1,0 +1,149 @@
+Oracle DBA Daily Health Check Script
+1️⃣ Check Database Status
+SELECT name, open_mode, database_role
+FROM v$database;
+
+Expected result:
+
+Database should be OPEN
+
+Role should be PRIMARY (unless standby database).
+
+2️⃣ Check Instance Status
+SELECT instance_name, status
+FROM v$instance;
+
+Status should be OPEN.
+
+3️⃣ Check Tablespace Usage
+SELECT
+tablespace_name,
+ROUND((used_space/tablespace_size)*100,2) used_percent
+FROM dba_tablespace_usage_metrics
+ORDER BY used_percent DESC;
+
+⚠️ Alert if usage > 85%
+
+4️⃣ Check Datafile Autoextend
+SELECT
+file_name,
+autoextensible
+FROM dba_data_files
+WHERE autoextensible='NO';
+
+Files without autoextend may cause tablespace full errors.
+
+5️⃣ Check Archive Log Destination
+SELECT
+dest_name,
+status,
+error
+FROM v$archive_dest;
+
+Make sure archive destination is VALID.
+
+6️⃣ Check Blocking Sessions
+SELECT
+blocking_session,
+sid,
+serial#
+FROM v$session
+WHERE blocking_session IS NOT NULL;
+
+Blocking sessions may cause application hangs.
+
+7️⃣ Check Long Running Queries
+SELECT
+sid,
+serial#,
+sql_id,
+elapsed_time
+FROM v$session_longops
+WHERE sofar != totalwork;
+
+Shows queries running for long time.
+
+8️⃣ Check Invalid Objects
+SELECT owner,
+object_name,
+object_type
+FROM dba_objects
+WHERE status='INVALID';
+
+Invalid objects may cause application failures.
+
+9️⃣ Check Database Size
+SELECT
+ROUND(SUM(bytes)/1024/1024/1024,2) "DB Size GB"
+FROM dba_data_files;
+
+Track database growth.
+
+🔟 Check Alert Log Errors
+
+Search alert log for critical errors:
+
+ORA-00600
+
+ORA-07445
+
+ORA-04031
+
+ORA-00257
+
+Alert log location:
+
+$ORACLE_BASE/diag/rdbms/*/*/trace/alert*.log
+1️⃣1️⃣ Check Memory Usage
+
+Check SGA:
+
+SHOW PARAMETER sga;
+
+Check PGA:
+
+SHOW PARAMETER pga;
+1️⃣2️⃣ Check Top SQL by CPU
+SELECT
+sql_id,
+cpu_time,
+executions
+FROM v$sql
+ORDER BY cpu_time DESC
+FETCH FIRST 10 ROWS ONLY;
+
+Helps identify high CPU queries.
+
+Example Daily Health Check Script (Combined)
+
+You can combine multiple checks:
+
+-- Database status
+SELECT name, open_mode FROM v$database;
+
+-- Tablespace usage
+SELECT tablespace_name,
+ROUND((used_space/tablespace_size)*100,2) used_percent
+FROM dba_tablespace_usage_metrics;
+
+-- Invalid objects
+SELECT owner, object_name
+FROM dba_objects
+WHERE status='INVALID';
+
+-- Blocking sessions
+SELECT blocking_session, sid
+FROM v$session
+WHERE blocking_session IS NOT NULL;
+Recommended Daily DBA Checklist
+
+Every DBA should check:
+
+✔ Database status
+✔ Tablespace usage
+✔ Archive log status
+✔ Blocking sessions
+✔ Invalid objects
+✔ Backup status
+✔ Alert log errors
+✔ Database growth
