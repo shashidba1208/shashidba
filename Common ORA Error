@@ -1,0 +1,352 @@
+
+ORA-01555: snapshot too old
+ORA-01555: snapshot too old in Oracle Database is a very common and critical performance issue faced by DBAs in production.
+
+🔴 What ORA-01555 Means
+👉 Oracle cannot reconstruct the older version of data needed by a query.
+
+In simple terms:
+
+Your query is running too long, and the required undo data has already been overwritten.
+
+📌 Why This Happens
+Oracle uses UNDO tablespace to maintain read consistency.
+
+When a long-running query needs old data:
+
+Oracle reads from UNDO
+
+If UNDO is overwritten → ❌ ORA-01555
+
+🔎 Common Causes
+1️⃣ Long Running Queries
+Query runs for a long time
+
+Needs older data snapshot
+
+2️⃣ Small UNDO Tablespace
+Not enough space to retain old data
+
+3️⃣ High DML Activity
+Frequent INSERT / UPDATE / DELETE
+
+Overwrites undo quickly
+
+4️⃣ Commit Inside Loop (Very Common)
+Bad code example:
+
+FOR i IN 1..10000 LOOP
+   UPDATE emp SET sal = sal + 100 WHERE empno = i;
+   COMMIT;
+END LOOP;
+👉 This causes undo to be overwritten quickly.
+
+5️⃣ Undo Retention Too Low
+Check:
+
+SHOW PARAMETER undo_retention;
+🛠 Solutions
+✅ 1️⃣ Increase UNDO Tablespace
+ALTER DATABASE DATAFILE '/u01/undo01.dbf'
+RESIZE 5G;
+OR add new file:
+
+ALTER TABLESPACE undotbs1
+ADD DATAFILE '/u01/undo02.dbf' SIZE 2G;
+✅ 2️⃣ Increase UNDO_RETENTION
+ALTER SYSTEM SET undo_retention = 1800;
+👉 (Value in seconds = 30 minutes)
+
+✅ 3️⃣ Avoid Frequent Commits
+❌ Wrong:
+
+COMMIT inside loop
+✅ Correct:
+
+COMMIT after batch processing
+✅ 4️⃣ Optimize Long Queries
+Add indexes
+
+Avoid full table scans
+
+Break large queries into smaller chunks
+
+✅ 5️⃣ Use RETENTION GUARANTEE (Advanced)
+ALTER TABLESPACE undotbs1 RETENTION GUARANTEE;
+⚠️ Use carefully → may block DML if space runs out.
+
+🔎 Useful Monitoring Queries
+Check undo usage
+SELECT * FROM v$undostat;
+Check undo tablespace size
+SELECT tablespace_name, sum(bytes)/1024/1024 MB
+FROM dba_data_files
+WHERE tablespace_name LIKE 'UNDO%'
+GROUP BY tablespace_name;
+Check active long queries
+SELECT sid, serial#, sql_id, elapsed_time
+FROM v$session_longops
+WHERE sofar != totalwork;
+📊 Real Production Scenario
+A report query runs for 1 hour
+
+Meanwhile heavy transactions run
+
+Undo gets overwritten
+
+Query fails with:
+
+ORA-01555: snapshot too old
+✅ Real Fix Implemented
+1️⃣ Increased UNDO tablespace
+2️⃣ Increased undo_retention
+3️⃣ Optimized report query
+4️⃣ Scheduled job during low load
+
+📘 Key DBA Learning
+👉 ORA-01555 is usually a combination of:
+
+Long query +
+
+Insufficient undo +
+
+High DML activity
+
+⭐ Best Practices
+
+✔ Size UNDO properly
+✔ Avoid commit inside loops
+✔ Monitor long queries
+✔ Tune SQL
+✔ Schedule heavy jobs off-peak
+
+Reference - ChatGpt
+
+Posted by shashi ranjan at 11:05 AM No comments:  
+Labels: Common ORA Error
+ORA-01109: database not open
+🔴 What ORA-01109 Means
+Oracle database has 3 main states:
+
+NOMOUNT – Instance started (memory + background processes)
+
+MOUNT – Control file opened
+
+OPEN – Datafiles opened → database ready for use ✅
+
+👉 ORA-01109 occurs when you try to run queries while DB is in:
+
+NOMOUNT or
+
+MOUNT state
+
+🔎 How to Check Current Status
+SELECT status FROM v$instance;
+SELECT open_mode FROM v$database;
+Example output:
+
+STATUS = MOUNTED
+OPEN_MODE = MOUNTED
+🛠 Solution
+✅ Open the Database
+ALTER DATABASE OPEN;
+✅ Or Start Database Fully
+STARTUP;
+This will:
+
+Start instance
+
+Mount database
+
+Open database
+
+🛠 Quick Troubleshooting Checklist
+✔ Check instance status
+✔ Check database open mode
+✔ Open database if mounted
+✔ Check recovery requirement
+✔ Check if standby DB
+✔ Check PDB status (if applicable)
+
+⭐ DBA Tip
+Always follow:
+
+STARTUP;
+instead of partial startup unless needed.
+
+🔥 Summary
+State	Meaning	Action
+NOMOUNT	Instance started	Mount DB
+MOUNT	Control file open	Open DB
+OPEN	Fully available	✅
+💡 Important
+
+👉 If database is not opening, always check:
+
+
+Alert log
+
+Recovery requirement
+
+Datafile status
+
+Posted by shashi ranjan at 11:02 AM No comments:  
+Labels: Common ORA Error
+ORA-01031: insufficient privileges
+🔴 What ORA-01031 Means
+Oracle is saying:
+
+“You don’t have the privilege to execute this SQL statement.”
+
+🛠 Quick Troubleshooting Checklist
+✔ Check what operation you are performing
+✔ Verify required privilege
+✔ Check if privilege is direct or via role
+✔ Confirm schema access
+✔ Check DB link permissions
+
+
+⭐ DBA Tip
+Check your privileges:
+
+SELECT * FROM user_sys_privs;
+SELECT * FROM user_tab_privs;
+🔥 Quick Summary
+Operation	Required Privilege
+SELECT	SELECT
+INSERT	INSERT
+CREATE TABLE	CREATE TABLE
+ALTER SYSTEM	SYSDBA
+
+
+Posted by shashi ranjan at 10:59 AM No comments:  
+Labels: Common ORA Error
+ORA-01017: invalid username/password; logon denied
+The error ORA-01017: invalid username/password; logon denied in Oracle Database means that Oracle is not accepting the login credentials you are using.
+
+🔴 What ORA-01017 Means
+👉 The username or password is incorrect, or Oracle cannot authenticate the user.
+
+🔎 Common Causes & Fixes
+1️⃣ Wrong Username or Password
+Double-check credentials:
+
+sqlplus username/password
+⚠️ Password is case-sensitive in modern Oracle versions.
+
+🛠 Quick Troubleshooting Checklist
+✔ Verify username/password
+✔ Check case sensitivity
+✔ Check account lock status
+✔ Check password expiry
+✔ Verify TNS/service name
+✔ Check DB link credentials
+
+📊 Real Production Example
+sqlplus emp/test123@PRODDB
+Error:
+
+ORA-01017
+👉 Root cause:
+
+Password changed but not updated in application
+
+✅ Fix Example
+ALTER USER emp IDENTIFIED BY new_password;
+Update application config with new password.
+
+⭐ DBA Tip
+Run this to verify user:
+
+SELECT username, account_status
+FROM dba_users
+WHERE username='EMP';
+💡 Important
+
+👉 If login works in one environment but fails in another → check:
+
+
+DB link credentials
+
+Application config
+
+TNS entries
+
+Posted by shashi ranjan at 10:55 AM No comments:  
+Labels: Common ORA Error
+ORA-00942: table or view does not exist
+ ORA-00942: table or view does not exist in Oracle Database means Oracle cannot find or access the object you’re querying.
+
+🔴 What This Error Means
+👉 Either:
+
+The table/view doesn’t exist, OR
+
+You don’t have permission to access it
+
+📊 Real Production Scenario (Very Common)
+Query:
+
+SELECT * FROM emp_gg.dstg@bidmpd;
+Error:
+
+ORA-00942
+👉 Root causes could be:
+
+Table not present in target DB
+
+No privilege on remote schema
+
+DB link pointing to wrong database
+
+Synonym missing
+
+🛠 Quick Fix Checklist
+✔ Use correct schema name
+✔ Check table exists (all_objects)
+✔ Verify privileges
+✔ Test DB link
+✔ Check synonyms
+✔ Verify case sensitivity
+
+Posted by shashi ranjan at 10:52 AM No comments:  
+Labels: Common ORA Error
+ORA-00933 Error Meaning
+ 
+
+🔴 ORA-00933 Error Meaning
+Oracle is telling you:
+
+👉 “Your SQL statement is not written correctly or is incomplete.”
+
+🔎 Common Causes & Fixes
+1️⃣ Extra Semicolon in Tools / Applications
+In tools like JDBC, Python, etc., a semicolon can cause issues.
+
+❌ Wrong:
+
+SELECT * FROM emp;
+✅ Correct (in some applications):
+
+SELECT * FROM emp
+2️⃣ Incorrect ORDER BY in Subquery
+❌ Wrong:
+
+SELECT * FROM (
+  SELECT * FROM emp ORDER BY empno
+);
+👉 ORDER BY not allowed inside subquery (unless using FETCH / ROWNUM)
+
+✅ Correct:
+
+SELECT * FROM (
+  SELECT * FROM emp
+) ORDER BY empno;
+🛠 How to Troubleshoot Quickly
+When you see ORA-00933:
+
+✔ Check last line of SQL
+✔ Remove extra commas
+✔ Verify clause order (SELECT → FROM → WHERE → ORDER BY)
+✔ Avoid MySQL/PostgreSQL syntax
+✔ Test query step-by-step
