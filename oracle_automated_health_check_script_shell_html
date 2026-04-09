@@ -1,0 +1,166 @@
+#!/bin/bash
+
+# ============================================================
+# Oracle DB Automated Health Check Script with HTML Report
+# Author: Shashi (Customizable)
+# ============================================================
+
+# Set Environment Variables
+export ORACLE_HOME=/u01/app/oracle/product/19.0.0/dbhome_1
+export PATH=$ORACLE_HOME/bin:$PATH
+export ORACLE_SID=ORCL
+
+# Output الملفات
+REPORT_DIR=/tmp/db_health
+REPORT_FILE=$REPORT_DIR/health_report_$(date +%Y%m%d_%H%M%S).html
+
+mkdir -p $REPORT_DIR
+
+# Start HTML Report
+cat <<EOF > $REPORT_FILE
+<html>
+<head>
+<title>Oracle DB Health Report</title>
+<style>
+body { font-family: Arial; background-color: #f4f4f4; }
+table { border-collapse: collapse; width: 100%; margin-bottom: 20px; }
+th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+th { background-color: #333; color: white; }
+.ok { background-color: #c6efce; }
+.warn { background-color: #ffeb9c; }
+.crit { background-color: #ffc7ce; }
+</style>
+</head>
+<body>
+<h1>Oracle Database Health Check Report</h1>
+<p>Generated on: $(date)</p>
+EOF
+
+# Function to run SQL and format output
+run_sql() {
+sqlplus -s / as sysdba <<SQL
+set pages 200 lines 200 feedback off heading on
+$1
+exit;
+SQL
+}
+
+# ------------------------------------------------------------
+# 1. Uptime
+# ------------------------------------------------------------
+UPTIME=$(run_sql "SELECT FLOOR(SYSDATE - STARTUP_TIME)||' days' FROM v\$instance;")
+
+cat <<EOF >> $REPORT_FILE
+<h2>Database Uptime</h2>
+<p class='ok'>$UPTIME</p>
+EOF
+
+# ------------------------------------------------------------
+# 2. DB Status
+# ------------------------------------------------------------
+DB_STATUS=$(run_sql "SELECT name || ' - ' || open_mode FROM v\$database;")
+
+cat <<EOF >> $REPORT_FILE
+<h2>Database Status</h2>
+<p class='ok'>$DB_STATUS</p>
+EOF
+
+# ------------------------------------------------------------
+# 3. Tablespace Usage
+# ------------------------------------------------------------
+cat <<EOF >> $REPORT_FILE
+<h2>Tablespace Usage</h2>
+<table>
+<tr><th>Tablespace</th><th>Used %</th></tr>
+EOF
+
+run_sql "
+SELECT tablespace_name,
+ROUND((used_space/total_space)*100,2) pct
+FROM (
+SELECT df.tablespace_name,
+SUM(df.bytes) total_space,
+SUM(df.bytes) - SUM(fs.bytes) used_space
+FROM dba_data_files df,
+     dba_free_space fs
+WHERE df.tablespace_name = fs.tablespace_name
+GROUP BY df.tablespace_name
+);
+" | while read line; do
+  pct=$(echo $line | awk '{print $2}')
+  class="ok"
+
+  if (( $(echo "$pct > 90" | bc -l) )); then
+    class="crit"
+  elif (( $(echo "$pct > 80" | bc -l) )); then
+    class="warn"
+  fi
+
+  echo "<tr class='$class'><td>$line</td></tr>" >> $REPORT_FILE
+done
+
+echo "</table>" >> $REPORT_FILE
+
+# ------------------------------------------------------------
+# 4. ASM Disk Usage
+# ------------------------------------------------------------
+cat <<EOF >> $REPORT_FILE
+<h2>ASM Diskgroup Usage</h2>
+<pre>
+$(run_sql "SELECT name, total_mb/1024 GB, free_mb/1024 FREE_GB FROM v\$asm_diskgroup;")
+</pre>
+EOF
+
+# ------------------------------------------------------------
+# 5. RMAN Backup
+# ------------------------------------------------------------
+BACKUP=$(run_sql "SELECT status FROM v\$rman_backup_job_details WHERE ROWNUM=1;")
+
+cat <<EOF >> $REPORT_FILE
+<h2>Last Backup Status</h2>
+<p>$BACKUP</p>
+EOF
+
+# ------------------------------------------------------------
+# 6. Active Sessions
+# ------------------------------------------------------------
+cat <<EOF >> $REPORT_FILE
+<h2>Active Sessions</h2>
+<pre>
+$(run_sql "SELECT status, COUNT(*) FROM v\$session GROUP BY status;")
+</pre>
+EOF
+
+# ------------------------------------------------------------
+# 7. Invalid Objects
+# ------------------------------------------------------------
+INVALID=$(run_sql "SELECT COUNT(*) FROM dba_objects WHERE status='INVALID';")
+
+cat <<EOF >> $REPORT_FILE
+<h2>Invalid Objects</h2>
+<p>$INVALID</p>
+EOF
+
+# ------------------------------------------------------------
+# 8. Data Guard Lag
+# ------------------------------------------------------------
+cat <<EOF >> $REPORT_FILE
+<h2>Data Guard Lag</h2>
+<pre>
+$(run_sql "SELECT name, value FROM v\$dataguard_stats;")
+</pre>
+EOF
+
+# ------------------------------------------------------------
+# End HTML
+# ------------------------------------------------------------
+cat <<EOF >> $REPORT_FILE
+</body>
+</html>
+EOF
+
+# Output location
+echo "Report generated: $REPORT_FILE"
+
+# Optional: Email
+# mail -s "DB Health Report" you@example.com < $REPORT_FILE
